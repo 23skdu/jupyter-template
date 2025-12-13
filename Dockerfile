@@ -1,6 +1,5 @@
-FROM jupyter/all-spark-notebook:latest
+FROM jupyter/all-spark-notebook:x86_64-python-3.11
 
-# hadolint ignore=DL3007
 LABEL author="23skdu@users.noreply.github.com"
 
 USER root
