@@ -1,3 +1,5 @@
+[![Lint](https://github.com/23skdu/jupyter-template/actions/workflows/lint.yml/badge.svg)](https://github.com/23skdu/jupyter-template/actions/workflows/lint.yml)
+
 # Jupyter Notebook template
 ## build
 ```
