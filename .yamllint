@@ -1,0 +1,32 @@
+# yamllint configuration, shared by the CI workflow (.yamllint is passed to
+# ibiqlik/action-yamllint via config_file) and by `make yamllint`. Keep it in one
+# place so the two cannot drift.
+#
+# Run from the repository root, where the paths below are relative to.
+extends: default
+
+ignore: |
+  # Helm templates are Go templates, not valid YAML on their own.
+  helm/jupyter-template/templates/
+  # Unit test suites are not chart inputs.
+  helm/jupyter-template/tests/
+  # Binaries fetched by `make -C tests tools`.
+  bin/
+
+rules:
+  line-length:
+    max: 160
+    allow-non-breakable-words: true
+  # values.yaml and Chart.yaml conventionally omit the leading `---`.
+  document-start:
+    present: false
+  # GitHub Actions workflow files use the `on:` key.
+  truthy:
+    allowed-values: ['true', 'false', 'on']
+  # GitHub Actions bracket and brace spacing is not the yamllint default.
+  brackets:
+    max-spaces-inside: 1
+  braces:
+    max-spaces-inside: 1
+  comments:
+    min-spaces-from-content: 1

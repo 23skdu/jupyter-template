@@ -1,0 +1,115 @@
+# Values that switch on every optional feature in the chart, so that
+# `helm template` and `helm unittest` exercise the branches that the defaults
+# leave off (Ingress, persistence, Spark UI, HPA, extra env, ...).
+#
+# Shared by .github/workflows/lint.yml and the Makefile's `helm-template` target
+# so the two cannot drift.
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: jupyter.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: jupyter-tls
+      hosts:
+        - jupyter.example.com
+
+httpRoute:
+  enabled: true
+  hostnames:
+    - jupyter.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Overwrite
+                value: "yes"
+  timeouts:
+    request: 24h
+
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: nfs-client
+  accessModes:
+    - ReadWriteMany
+  mountPath: /home/jovyan/work
+  homeVolume: false
+
+spark:
+  ui:
+    enabled: true
+    port: 4040
+
+autoscaling:
+  enabled: true
+  targetMemoryUtilizationPercentage: 70
+
+serviceAccount:
+  automount: true
+
+token:
+  value: ci-placeholder-token
+
+extraEnv:
+  - name: AWS_REGION
+    value: eu-north-1
+  - name: PYTHONPATH
+    value: /usr/local/spark/python:/usr/local/spark/python/lib/py4j-0.10.9.9-src.zip
+
+envFrom:
+  - secretRef:
+      name: cloud-creds
+
+extraArgs:
+  - --ServerApp.base_url=/jupyter/
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: jupyter-template
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations:
+  - key: notebook
+    operator: Exists
+    effect: NoSchedule
+
+volumes:
+  - name: dask-config
+    configMap:
+      name: dask-config
+
+volumeMounts:
+  - name: dask-config
+    mountPath: /etc/dask
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+
+podLabels:
+  tier: dev
+
+imagePullSecrets:
+  - name: regcred
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi

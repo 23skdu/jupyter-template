@@ -1,0 +1,5 @@
+# Binaries fetched by `make tools`.
+/bin/
+
+# Chart packages produced by `make package`.
+*.tgz

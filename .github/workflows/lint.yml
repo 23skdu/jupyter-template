@@ -67,16 +67,9 @@ jobs:
         run: helm template ci helm/jupyter-template --namespace ci > /dev/null
 
       - name: Helm template (all features enabled)
-        run: |
-          helm template ci helm/jupyter-template --namespace ci \
-            --set ingress.enabled=true \
-            --set ingress.className=nginx \
-            --set persistence.enabled=true \
-            --set spark.ui.enabled=true \
-            --set autoscaling.enabled=true \
-            --set serviceAccount.automount=true \
-            --set extraEnv[0].name=AWS_REGION \
-            --set extraEnv[0].value=eu-north-1 > /dev/null
+        # Values live in tests/values-all-features.yaml so this step and
+        # `make -C tests render-all` exercise the same branches.
+        run: helm template ci helm/jupyter-template --namespace ci -f tests/values-all-features.yaml > /dev/null
 
       - name: Helm unittest
         run: helm unittest helm/jupyter-template --strict
@@ -90,30 +83,12 @@ jobs:
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3
         with:
-          # The input is config_data (passed to yamllint as -d), not config.
-          # Helm templates are Go templates, not valid YAML on their own, so
-          # only the static YAML in the repo is linted.
-          config_data: |
-            extends: default
-            ignore: |
-              helm/jupyter-template/templates/
-              helm/jupyter-template/tests/
-            rules:
-              line-length:
-                max: 160
-                allow-non-breakable-words: true
-              document-start:
-                present: false
-              # GitHub Actions workflow keys use `on:`, and its bracket style
-              # and inline mapping spacing are not the yamllint defaults.
-              truthy:
-                allowed-values: ['true', 'false', 'on']
-              brackets:
-                max-spaces-inside: 1
-              braces:
-                max-spaces-inside: 1
-              comments:
-                min-spaces-from-content: 1
+          # The rules live in .yamllint at the repo root so this job and
+          # `make -C tests lint-yaml` cannot drift apart. Note this action has
+          # config_file / config_data inputs but no plain `config` input: an
+          # unknown key is only a warning, and yamllint then silently falls back
+          # to the default ruleset.
+          config_file: .yamllint
           strict: true
 
       - name: actionlint
