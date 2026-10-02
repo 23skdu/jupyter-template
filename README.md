@@ -1,8 +1,5 @@
 # jupyter-template
 
-[![Build](https://github.com/23skdu/jupyter-template/actions/workflows/build.yml/badge.svg)](https://github.com/23skdu/jupyter-template/actions/workflows/build.yml)
-[![Lint](https://github.com/23skdu/jupyter-template/actions/workflows/lint.yml/badge.svg)](https://github.com/23skdu/jupyter-template/actions/workflows/lint.yml)
-
 A ready-to-run **JupyterLab + Apache Spark** image, plus a Helm chart that
 deploys it to Kubernetes.
 
