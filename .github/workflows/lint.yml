@@ -90,9 +90,10 @@ jobs:
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3
         with:
+          # The input is config_data (passed to yamllint as -d), not config.
           # Helm templates are Go templates, not valid YAML on their own, so
           # only the static YAML in the repo is linted.
-          config: |
+          config_data: |
             extends: default
             ignore: |
               helm/jupyter-template/templates/
@@ -113,6 +114,7 @@ jobs:
                 max-spaces-inside: 1
               comments:
                 min-spaces-from-content: 1
+          strict: true
 
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.12
