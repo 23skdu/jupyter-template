@@ -11,7 +11,7 @@ deploys it to Kubernetes.
 | Architectures | `linux/amd64`, `linux/arm64` |
 | Chart | `helm/jupyter-template`, `apiVersion: v2`, Helm 3.22+ and 4.x |
 | Chart schema | `values.schema.json` (validated on install, upgrade and template) |
-| Tests | 148 unit tests across 11 `helm-unittest` suites |
+| Tests | 152 unit tests across 11 `helm-unittest` suites, runnable via `make -C tests` |
 
 ---
 
@@ -19,6 +19,7 @@ deploys it to Kubernetes.
 
 - [Why this image](#why-this-image)
 - [Quick start with Docker](#quick-start-with-docker)
+- [Running it with Docker Compose](#running-it-with-docker-compose)
 - [Using Spark](#using-spark)
 - [Deploying with Helm](#deploying-with-helm)
   - [Getting the token](#getting-the-token)
@@ -29,6 +30,9 @@ deploys it to Kubernetes.
 - [Configuration reference](#configuration-reference)
 - [Command-line arguments to Jupyter](#command-line-arguments-to-jupyter)
 - [Development](#development)
+  - [Running it with Docker Compose](#running-it-with-docker-compose)
+  - [Building](#building)
+  - [Chart tests](#chart-tests)
 - [Migrating from the previous version](#migrating-from-the-previous-version)
 - [Licence](#licence)
 
@@ -420,6 +424,40 @@ See the [Jupyter Server documentation](https://jupyter-server.readthedocs.io/en/
 
 ## Development
 
+### Running it with Docker Compose
+
+`docker-compose.yml` builds the image from the local Dockerfile, so it exercises
+the image you are editing rather than the published one.
+
+```bash
+docker compose up --build     # JupyterLab on https://localhost:8888/lab
+docker compose down -v        # stop and delete the work volume
+```
+
+Two more services sit behind the `tools` profile, so they do not start by
+default:
+
+```bash
+docker compose run --rm shell                # bash as the notebook user
+docker compose run --rm spark spark-submit job.py   # one-off PySpark job
+```
+
+Compose defaults, all overridable via the environment or a `.env` file:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JUPYTER_TOKEN` | `dev-only-notebook-token` | **Change this.** Login token. |
+| `JUPYTER_PORT` | `8888` | Host port for Jupyter Server. |
+| `SPARK_UI_PORT` | `4040` | Host port for the Spark UI. |
+| `BASE_IMAGE` / `BASE_TAG` | quay.io, `2026-09-29` | Upstream base to build from. |
+| `DOCKER_USER` | `1000` | uid for the `shell` service. |
+
+Notebooks live in the `jupyter-work` named volume at `/home/jovyan/work`, which
+is the Compose counterpart of the chart's `persistence`. The container also gets
+`shm_size: 1gb`, because Spark's workers do not cope with Docker's default
+64 MB `/dev/shm`, and a healthcheck that does a `GET` over HTTPS with
+certificate verification off (Jupyter answers `HEAD` on `/` with 405).
+
 ### Building
 
 ```bash
@@ -439,34 +477,29 @@ docker run --rm -p 8888:8888 -e JUPYTER_TOKEN=change-me jupyter-template:dev
 ### Chart tests
 
 ```bash
-# Helm 3
-helm plugin install https://github.com/helm-unittest/helm-unittest.git
-
-# Helm 4 (signature verification is not supported for git-installed plugins)
-helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
-
-helm lint helm/jupyter-template --strict
-helm unittest helm/jupyter-template --strict
+make -C tests            # runs everything CI runs, locally
+make -C tests help       # list every target
 ```
 
-`tests/` holds 148 assertions across 11 suites:
+`make -C tests tools` fetches pinned Helm 3.22.0 and 4.3.0 side by side into
+`./bin` (gitignored) so both CI matrix versions can be exercised without
+touching `PATH`; every target prefers `./bin` and falls back to `PATH`.
 
-| Suite | Covers |
+See [`tests/README.md`](tests/README.md) for the full target list, the `SUITE`
+and `JUNIT` options, and how to write a new suite.
+
+| Target | What it does |
 | --- | --- |
-| `deployment` (42) | Image resolution, env, probes, security context, resources, scheduling, metadata |
-| `helpers` (12) | Name/fullname derivation, 63-char DNS truncation, chart and app-version labels |
-| `persistence` (15) | PVC creation and pod wiring for both mount modes |
-| `token-secret` (8) | Token generation, quoting, and `create`/`existingSecret` |
-| `service` (7) | Types, ports, Spark UI, selectors |
-| `serviceaccount` (8) | Creation, automount, naming |
-| `ingress` (9) | Hosts, paths, TLS, class, annotations |
-| `httproute` (12) | Parent refs, rules, filters, generated `backendRefs`, timeouts |
-| `hpa` (6) | Metrics and replica bounds |
-| `test-connection` (9) | The `helm test` probe pod |
-| `schema` (20) | Rejection cases for invalid values |
+| `check` | Everything, in CI order. |
+| `unit` | `helm unittest --strict`. |
+| `chart-lint` | `helm lint --strict`. |
+| `render` / `render-all` | `helm template` with default / all-feature values. |
+| `helm3` / `helm4` | All Helm checks pinned to one version. |
+| `lint-docker` / `lint-yaml` / `lint-workflows` | hadolint / yamllint / actionlint. |
+| `doctor` | Show which binaries each target resolves to. |
+| `tools` / `clean` | Fetch or remove pinned tools. |
 
-The suites are excluded from the packaged chart via `.helmignore`; run them from
-a checkout.
+The suites hold 152 assertions across 11 files.
 
 ### Linting
 

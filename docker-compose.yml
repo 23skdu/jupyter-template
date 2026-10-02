@@ -1,0 +1,105 @@
+# Local development environment for the jupyter-template image.
+#
+# Builds the image from the Dockerfile in this repository, so `docker compose up`
+# exercises the image you are editing rather than the published one.
+#
+#   docker compose up --build              start JupyterLab
+#   docker compose run --rm spark          one-off PySpark shell (profile)
+#   docker compose run --rm shell          bash in the notebook user (profile)
+#   docker compose down -v                 stop and delete the work volume
+#
+# Jupyter serves HTTPS on 8888 with a self-signed certificate, because the image
+# sets GEN_CERT=yes. Your browser will warn about the certificate.
+
+name: jupyter-template
+
+services:
+  jupyter:
+    build:
+      context: .
+      args:
+        # Override to test a different upstream release:
+        #   docker compose build --build-arg BASE_TAG=spark-4.2.0
+        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
+        BASE_TAG: ${BASE_TAG:-2026-09-29}
+    image: jupyter-template:local
+    container_name: jupyter-template
+    init: true
+    ports:
+      # host:container for Jupyter Server and the Spark UI. Each additional
+      # Spark context takes the next port, so map 4041, 4042, ... if you need
+      # to inspect more than one at a time.
+      - "${JUPYTER_PORT:-8888}:8888"
+      - "${SPARK_UI_PORT:-4040}:4040"
+    environment:
+      # Change this, or set it in a .env file, before sharing the container.
+      # Jupyter generates a random token if none is given.
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dev-only-notebook-token}
+      # Makes `import pyspark` work in a notebook. Without this, use spark-submit.
+      # Confirm the py4j filename with `ls /usr/local/spark/python/lib`.
+      PYTHONPATH: ${PYTHONPATH:-/usr/local/spark/python:/usr/local/spark/python/lib/py4j-0.10.9.9-src.zip}
+      # Jupyter hands the process over to the notebook user itself.
+      DOCKER_STACKS_JUPYTER_CMD: ${JUPYTER_CMD:-lab}
+    volumes:
+      # Notebooks and datasets. This is the container equivalent of the chart's
+      # persistence, which is off by default.
+      - jupyter-work:/home/jovyan/work
+      # Mount a local directory instead of the named volume:
+      # - ./notebooks:/home/jovyan/work
+    working_dir: /home/jovyan/work
+    # Spark's JVM and Python workers need more than Docker's default 64 MB /dev/shm.
+    shm_size: "1gb"
+    healthcheck:
+      # busybox-style probe over HTTPS with certificate verification off: the
+      # image sets GEN_CERT=yes and serves a self-signed certificate, and
+      # Jupyter answers HEAD on / with 405, so this has to be a GET.
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:8888/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      # A cold Spark session can take a while, so allow a generous start period.
+      start_period: 90s
+      retries: 3
+    restart: unless-stopped
+
+  # One-off PySpark job. `docker compose run --rm spark spark-submit job.py`
+  spark:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
+        BASE_TAG: ${BASE_TAG:-2026-09-29}
+    image: jupyter-template:local
+    profiles: [tools]
+    init: true
+    working_dir: /home/jovyan/work
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dev-only-notebook-token}
+    volumes:
+      - jupyter-work:/home/jovyan/work
+    shm_size: "1gb"
+    # Override on the command line, e.g.
+    #   docker compose run --rm spark spark-submit /home/jovyan/work/job.py
+    command: ["spark-submit"]
+
+  # Interactive bash as the unprivileged notebook user.
+  shell:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
+        BASE_TAG: ${BASE_TAG:-2026-09-29}
+    image: jupyter-template:local
+    profiles: [tools]
+    init: true
+    working_dir: /home/jovyan/work
+    volumes:
+      - jupyter-work:/home/jovyan/work
+    shm_size: "1gb"
+    # Starts as root so GRANT_SUDO, NB_UID and NB_GID actually apply. Only for
+    # containers you trust; the notebook user otherwise has no sudo.
+    user: "${DOCKER_USER:-1000}"
+    entrypoint: ["/bin/bash"]
+    command: ["-l"]
+
+volumes:
+  jupyter-work:
