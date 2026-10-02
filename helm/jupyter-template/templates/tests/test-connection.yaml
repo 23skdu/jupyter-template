@@ -6,10 +6,35 @@ metadata:
     {{- include "jupyter-template.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: wget
-      image: busybox
-      command: ['wget']
-      args: ['{{ include "jupyter-template.fullname" . }}:{{ .Values.service.port }}']
+      image: busybox:1.37.0
+      imagePullPolicy: IfNotPresent
+      command:
+        - wget
+      args:
+        # --spider so the probe never downloads a body; busybox returns 0 for
+        # any reachable HTTP status, including Jupyter's redirect to /login.
+        - "--spider"
+        - "{{ include "jupyter-template.fullname" . }}:{{ .Values.service.port }}"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi
   restartPolicy: Never

@@ -1,0 +1,101 @@
+suite: helm test connection
+templates:
+  - tests/test-connection.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: runs a throwaway pod that spiders the service
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Pod
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template-test-connection
+      - equal:
+          path: spec.restartPolicy
+          value: Never
+
+  - it: is registered as a helm test hook and cleaned up afterwards
+    asserts:
+      - equal:
+          path: metadata.annotations['helm.sh/hook']
+          value: test
+      - matchRegex:
+          path: metadata.annotations['helm.sh/hook-delete-policy']
+          pattern: before-hook-creation
+      - matchRegex:
+          path: metadata.annotations['helm.sh/hook-delete-policy']
+          pattern: hook-succeeded
+
+  - it: targets the service on the configured port
+    asserts:
+      - equal:
+          path: spec.containers[0].command
+          value:
+            - wget
+      - equal:
+          path: spec.containers[0].args
+          value:
+            - --spider
+            - rel-jupyter-template:8888
+
+  - it: follows a custom service port
+    set:
+      service.port: 9999
+    asserts:
+      - equal:
+          path: spec.containers[0].args
+          value:
+            - --spider
+            - rel-jupyter-template:9999
+
+  - it: follows fullnameOverride so the probe targets the right service
+    set:
+      fullnameOverride: nb
+    asserts:
+      - equal:
+          path: metadata.name
+          value: nb-test-connection
+      - contains:
+          path: spec.containers[0].args
+          content: nb:8888
+
+  - it: pins the busybox image to a version
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].image
+          pattern: ^busybox:[0-9]+\.[0-9]+
+
+  - it: does not automount the service account token
+    asserts:
+      - equal:
+          path: spec.automountServiceAccountToken
+          value: false
+
+  - it: runs unprivileged with a read-only root filesystem
+    asserts:
+      - equal:
+          path: spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.containers[0].securityContext.capabilities.drop
+          value:
+            - ALL
+
+  - it: requests a token amount of resources
+    asserts:
+      - equal:
+          path: spec.containers[0].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.containers[0].resources.limits.memory
+          value: 32Mi

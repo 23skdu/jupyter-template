@@ -1,0 +1,86 @@
+suite: service
+templates:
+  - service.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: renders a ClusterIP service on port 8888 by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8888
+              targetPort: http
+              protocol: TCP
+
+  - it: selects the pods created by the deployment
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: jupyter-template
+            app.kubernetes.io/instance: rel
+
+  - it: follows a custom service port
+    set:
+      service.port: 9999
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 9999
+
+  - it: supports every service type
+    set:
+      service.type: LoadBalancer
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+
+  - it: omits the Spark UI port by default
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+
+  - it: exposes the Spark UI port alongside http
+    set:
+      spark.ui.enabled: true
+    asserts:
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8888
+              targetPort: http
+              protocol: TCP
+            - name: spark-ui
+              port: 4040
+              targetPort: spark-ui
+              protocol: TCP
+
+  - it: renders service annotations and labels
+    set:
+      service.annotations:
+        cloud.google.com/load-balancer-type: Internal
+      service.labels:
+        tier: edge
+    asserts:
+      - equal:
+          path: metadata.annotations["cloud.google.com/load-balancer-type"]
+          value: Internal
+      - equal:
+          path: metadata.labels.tier
+          value: edge

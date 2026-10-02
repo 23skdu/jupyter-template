@@ -1,0 +1,213 @@
+suite: persistence
+templates:
+  - pvc.yaml
+  - deployment.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  # --- PVC ------------------------------------------------------------------
+
+  - it: does not create a PVC when persistence is disabled
+    template: pvc.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates a PVC with the default size and access mode
+    set:
+      persistence.enabled: true
+    template: pvc.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template
+      - equal:
+          path: spec.accessModes
+          value:
+            - ReadWriteOnce
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+
+  - it: honours a custom size, class and access modes
+    set:
+      persistence.enabled: true
+      persistence.size: 100Gi
+      persistence.storageClass: nfs-client
+      persistence.accessModes:
+        - ReadWriteMany
+    template: pvc.yaml
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 100Gi
+      - equal:
+          path: spec.storageClassName
+          value: nfs-client
+      - equal:
+          path: spec.accessModes
+          value:
+            - ReadWriteMany
+
+  - it: disables the storage class when set to "-"
+    set:
+      persistence.enabled: true
+      persistence.storageClass: "-"
+    template: pvc.yaml
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ""
+
+  - it: omits storageClassName when no class is configured
+    set:
+      persistence.enabled: true
+      persistence.storageClass: null
+    template: pvc.yaml
+    asserts:
+      - notExists:
+          path: spec.storageClassName
+
+  - it: skips the PVC when an existing claim is supplied
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: my-pvc
+    template: pvc.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders PVC labels and annotations
+    set:
+      persistence.enabled: true
+      persistence.labels:
+        backup: daily
+      persistence.annotations:
+        helm.sh/resource-policy: keep
+    template: pvc.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.backup
+          value: daily
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  # --- pod wiring -----------------------------------------------------------
+
+  - it: does not mount or declare volumes when persistence is disabled
+    template: deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+
+  - it: mounts the generated claim at the work directory
+    set:
+      persistence.enabled: true
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes
+          value:
+            - name: work
+              persistentVolumeClaim:
+                claimName: rel-jupyter-template
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: work
+              mountPath: /home/jovyan/work
+
+  - it: mounts an existing claim instead of creating one
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: my-pvc
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+          value: my-pvc
+
+  - it: honours a custom mount path
+    set:
+      persistence.enabled: true
+      persistence.mountPath: /data
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /data
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: work
+
+  - it: mounts the whole home directory when homeVolume is true
+    set:
+      persistence.enabled: true
+      persistence.homeVolume: true
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: home
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /home/jovyan
+
+  - it: appends extra volumeMounts after the persistence mount
+    set:
+      persistence.enabled: true
+      volumeMounts:
+        - name: dask-config
+          mountPath: /etc/dask
+    template: deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 2
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: dask-config
+            mountPath: /etc/dask
+
+  - it: renders extra volumes alongside the claim
+    set:
+      persistence.enabled: true
+      volumes:
+        - name: dask-config
+          configMap:
+            name: dask-config
+    template: deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 2
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: dask-config
+            configMap:
+              name: dask-config
+
+  - it: renders extra volumes even without persistence
+    set:
+      volumes:
+        - name: tmp
+          emptyDir: {}
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes
+          value:
+            - name: tmp
+              emptyDir: {}
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts

@@ -1,0 +1,505 @@
+suite: deployment
+templates:
+  - deployment.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: renders a Deployment with the release-derived fullname
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template
+      - equal:
+          path: apiVersion
+          value: apps/v1
+
+  - it: defaults to a single replica
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: omits replicas when autoscaling is enabled so the HPA owns them
+    set:
+      autoscaling.enabled: true
+    template: deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: honours replicaCount
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: uses the selector labels for the pod selector
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: jupyter-template
+            app.kubernetes.io/instance: rel
+
+  - it: matches pod template labels against the selector so pods are adopted
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: jupyter-template
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+          value: rel
+
+  # --- image resolution -----------------------------------------------------
+
+  - it: falls back to the chart appVersion when no tag is set
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/23skdu/jupyter-template:2026-09-29
+
+  - it: uses image.tag when provided
+    set:
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/23skdu/jupyter-template:v1.2.3
+
+  - it: honours a custom repository
+    set:
+      image.repository: registry.example.com/team/notebook
+      image.tag: dev
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.com/team/notebook:dev
+
+  - it: passes through the pull policy
+    set:
+      image.pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  # --- ports ----------------------------------------------------------------
+
+  - it: exposes the http port named after service.port
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0]
+          value:
+            name: http
+            containerPort: 8888
+            protocol: TCP
+
+  - it: omits the Spark UI port by default
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].ports
+          count: 1
+
+  - it: exposes the Spark UI port when enabled
+    set:
+      spark.ui.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: spark-ui
+            containerPort: 4040
+            protocol: TCP
+
+  - it: allows overriding the Spark UI port
+    set:
+      spark.ui.enabled: true
+      spark.ui.port: 4050
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: spark-ui
+            containerPort: 4050
+            protocol: TCP
+
+  # --- env ------------------------------------------------------------------
+
+  - it: injects JUPYTER_TOKEN from the chart-managed secret by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: JUPYTER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: rel-jupyter-template
+                key: token
+
+  - it: injects JUPYTER_TOKEN from an existing secret when configured
+    set:
+      token.create: false
+      token.existingSecret: my-secret
+      token.existingSecretKey: jupyter
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: JUPYTER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-secret
+                key: jupyter
+
+  - it: drops the JUPYTER_TOKEN env var when injectEnv is false
+    set:
+      token.injectEnv: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: omits env entirely when nothing is configured
+    set:
+      token.injectEnv: false
+      jupyterEnv: []
+      extraEnv: []
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: keeps env when only jupyterEnv is set
+    set:
+      token.injectEnv: false
+      jupyterEnv:
+        - name: CHOWN_HOME
+          value: "yes"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: CHOWN_HOME
+              value: "yes"
+
+  - it: renders jupyterEnv entries
+    set:
+      jupyterEnv:
+        - name: CHOWN_HOME
+          value: "yes"
+        - name: NB_GID
+          value: "1000"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHOWN_HOME
+            value: "yes"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NB_GID
+            value: "1000"
+
+  - it: renders extraEnv entries
+    set:
+      extraEnv:
+        - name: AWS_REGION
+          value: eu-north-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_REGION
+            value: eu-north-1
+
+  - it: keeps all three env sources together
+    set:
+      jupyterEnv:
+        - name: CHOWN_HOME
+          value: "yes"
+      extraEnv:
+        - name: AWS_REGION
+          value: eu-north-1
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].env
+          count: 3
+
+  - it: renders envFrom
+    set:
+      envFrom:
+        - secretRef:
+            name: cloud-creds
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef:
+                name: cloud-creds
+
+  # --- args -----------------------------------------------------------------
+
+  - it: omits args by default so the image CMD is used verbatim
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].args
+
+  - it: forwards extraArgs to start-notebook.py
+    set:
+      extraArgs:
+        - --ServerApp.base_url=/jupyter/
+        - --ServerApp.root_dir=/home/jovyan/work
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - --ServerApp.base_url=/jupyter/
+            - --ServerApp.root_dir=/home/jovyan/work
+
+  # --- probes ---------------------------------------------------------------
+
+  - it: configures a startup probe that tolerates slow Spark startup
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet
+          value:
+            path: /
+            port: http
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 30
+
+  - it: merges probe overrides onto the defaults
+    set:
+      livenessProbe:
+        httpGet:
+          path: /api/status
+        periodSeconds: 60
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /api/status
+            port: http
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.periodSeconds
+          value: 60
+
+  - it: swaps the probe type wholesale
+    set:
+      livenessProbe:
+        tcpSocket:
+          port: http
+        periodSeconds: 60
+        timeoutSeconds: 5
+        failureThreshold: null
+        httpGet: null
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            tcpSocket:
+              port: http
+            periodSeconds: 60
+            timeoutSeconds: 5
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+
+  - it: allows disabling probes by setting them to null
+    set:
+      startupProbe: null
+      livenessProbe: null
+      readinessProbe: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+
+  # --- security -------------------------------------------------------------
+
+  - it: applies restrictive security defaults
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 100
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value:
+            - ALL
+
+  - it: does not automount the service account token
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: mirrors automount onto the pod spec
+    set:
+      serviceAccount.automount: true
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: true
+
+  - it: allows the security context to be replaced wholesale
+    set:
+      podSecurityContext:
+        fsGroup: 2000
+        runAsUser: 1000
+        fsGroupChangePolicy: null
+      securityContext:
+        runAsUser: 1000
+        readOnlyRootFilesystem: true
+        runAsNonRoot: null
+        allowPrivilegeEscalation: null
+        capabilities: null
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 2000
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext.capabilities
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+      - notExists:
+          path: spec.template.spec.securityContext.fsGroupChangePolicy
+
+  # --- resources ------------------------------------------------------------
+
+  - it: sets resource requests so the pod is not BestEffort QoS
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 1Gi
+
+  # --- scheduling -----------------------------------------------------------
+
+  - it: renders the termination grace period
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 30
+
+  - it: renders nodeSelector, tolerations, affinity and topology spread
+    set:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: notebook
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - eu-north-1a
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: jupyter-template
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            kubernetes.io/os: linux
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 1
+
+  - it: omits scheduling blocks that are not configured
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+      - notExists:
+          path: spec.template.spec.tolerations
+      - notExists:
+          path: spec.template.spec.affinity
+      - notExists:
+          path: spec.template.spec.topologySpreadConstraints
+
+  # --- metadata plumbing ----------------------------------------------------
+
+  - it: renders pod annotations and labels
+    set:
+      podAnnotations:
+        prometheus.io/scrape: "true"
+      podLabels:
+        tier: dev
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.labels.tier
+          value: dev
+
+  - it: keeps the token checksum annotation when custom annotations are set
+    set:
+      podAnnotations:
+        foo: bar
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/token-secret"]
+      - equal:
+          path: spec.template.metadata.annotations.foo
+          value: bar
+
+  - it: renders imagePullSecrets
+    set:
+      imagePullSecrets:
+        - name: regcred
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: regcred
+
+  - it: references the generated service account
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: rel-jupyter-template
+
+  - it: references a custom service account name
+    set:
+      serviceAccount.name: custom-sa
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: custom-sa

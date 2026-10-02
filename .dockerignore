@@ -1,0 +1,5 @@
+# Only the Dockerfile itself is needed to build the image. Everything else in
+# this repo is either CI config or documentation, so excluding it keeps the
+# build context (and therefore upload time) small.
+*
+!Dockerfile

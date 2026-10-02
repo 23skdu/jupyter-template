@@ -1,0 +1,154 @@
+# values.schema.json is enforced by Helm on install, upgrade and template, and
+# by helm-unittest on every suite. These tests pin the rejection behaviour so a
+# typo in a values file fails fast instead of rendering a broken manifest.
+#
+# `failedTemplate: {}` only asserts that rendering was rejected; the exact
+# wording of schema errors differs between Helm 3 and Helm 4, so the `it:` name
+# carries the intent instead.
+suite: values schema
+templates:
+  - deployment.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: accepts the shipped defaults
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: rejects an unknown top-level key
+    set:
+      totallyBogusKey: true
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an unknown key inside image
+    set:
+      image:
+        registry: quay.io
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a non-integer replicaCount
+    set:
+      replicaCount: "two"
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a negative replicaCount
+    set:
+      replicaCount: -1
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an invalid image pull policy
+    set:
+      image.pullPolicy: Sometimes
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an invalid service type
+    set:
+      service.type: Bogus
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an out-of-range service port
+    set:
+      service.port: 99999
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an empty image repository
+    set:
+      image.repository: ""
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an unknown ingress pathType
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: jupyter.local
+          paths:
+            - path: /
+              pathType: Regex
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an ingress host with no host key
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - paths:
+            - path: /
+              pathType: Prefix
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a TLS entry with no secretName
+    set:
+      ingress.enabled: true
+      ingress.tls:
+        - hosts:
+            - jupyter.local
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an invalid persistence accessMode
+    set:
+      persistence.enabled: true
+      persistence.accessModes:
+        - ReadWriteSome
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a malformed persistence size
+    set:
+      persistence.enabled: true
+      persistence.size: 10 gigabytes
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a relative persistence mountPath
+    set:
+      persistence.enabled: true
+      persistence.mountPath: relative/path
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an env var with no name
+    set:
+      extraEnv:
+        - value: nope
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an env var with an unknown field
+    set:
+      extraEnv:
+        - name: FOO
+          value: bar
+          required: true
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects an HPA target above 100 percent
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetCPUUtilizationPercentage: 150
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a negative terminationGracePeriodSeconds
+    set:
+      terminationGracePeriodSeconds: -5
+    asserts:
+      - failedTemplate: {}
+
+  - it: rejects a boolean where a string is expected
+    set:
+      image.tag: true
+    asserts:
+      - failedTemplate: {}

@@ -1,0 +1,135 @@
+suite: ingress
+templates:
+  - ingress.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: renders nothing while ingress is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a networking.k8s.io/v1 Ingress with the default host
+    set:
+      ingress.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: apiVersion
+          value: networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template
+      - equal:
+          path: spec.rules
+          value:
+            - host: jupyter.local
+              http:
+                paths:
+                  - path: "/"
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: rel-jupyter-template
+                        port:
+                          number: 8888
+
+  - it: quotes the path so YAML cannot reinterpret it
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: jupyter.local
+          paths:
+            - path: /lab
+              pathType: Prefix
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /lab
+
+  - it: renders multiple hosts and paths
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: a.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+            - path: /lab
+              pathType: Prefix
+        - host: b.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+    asserts:
+      - lengthEqual:
+          path: spec.rules
+          count: 2
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - equal:
+          path: spec.rules[1].host
+          value: b.example.com
+
+  - it: renders the ingress class and annotations
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+      ingress.annotations:
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"]
+          value: "3600"
+
+  - it: omits the ingress class when unset
+    set:
+      ingress.enabled: true
+      ingress.className: null
+    asserts:
+      - notExists:
+          path: spec.ingressClassName
+
+  - it: renders TLS configuration
+    set:
+      ingress.enabled: true
+      ingress.tls:
+        - secretName: jupyter-tls
+          hosts:
+            - jupyter.local
+    asserts:
+      - equal:
+          path: spec.tls
+          value:
+            - hosts:
+                - jupyter.local
+              secretName: jupyter-tls
+
+  - it: follows a custom service port in the backend
+    set:
+      ingress.enabled: true
+      service.port: 9999
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 9999
+
+  - it: honours fullnameOverride in the backend reference
+    set:
+      ingress.enabled: true
+      fullnameOverride: nb
+    asserts:
+      - equal:
+          path: metadata.name
+          value: nb
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: nb

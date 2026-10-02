@@ -1,35 +1,94 @@
-1. Get the application URL by running these commands:
-{{- if .Values.httpRoute.enabled }}
-{{- if .Values.httpRoute.hostnames }}
-    export APP_HOSTNAME={{ .Values.httpRoute.hostnames | first }}
-{{- else }}
-    export APP_HOSTNAME=$(kubectl get --namespace {{(first .Values.httpRoute.parentRefs).namespace | default .Release.Namespace }} gateway/{{ (first .Values.httpRoute.parentRefs).name }} -o jsonpath="{.spec.listeners[0].hostname}")
-  {{- end }}
-{{- if and .Values.httpRoute.rules (first .Values.httpRoute.rules).matches (first (first .Values.httpRoute.rules).matches).path.value }}
-    echo "Visit http://$APP_HOSTNAME{{ (first (first .Values.httpRoute.rules).matches).path.value }} to use your application"
+{{- $fullName := include "jupyter-template.fullname" . -}}
+Jupyter Server is starting. Watch it come up with:
+  kubectl --namespace {{ .Release.Namespace }} rollout status deployment/{{ $fullName }}
 
-    NOTE: Your HTTPRoute depends on the listener configuration of your gateway and your HTTPRoute rules.
-    The rules can be set for path, method, header and query parameters.
-    You can check the gateway configuration with 'kubectl get --namespace {{(first .Values.httpRoute.parentRefs).namespace | default .Release.Namespace }} gateway/{{ (first .Values.httpRoute.parentRefs).name }} -o yaml'
-{{- end }}
+1. Reach the notebook server:
+{{- if .Values.httpRoute.enabled }}
+  {{- /* Resolve the first configured path, defaulting to "/". Guarded against
+  nil lists so a partially configured httpRoute block still renders. */ -}}
+  {{- $path := "/" -}}
+  {{- $rules := .Values.httpRoute.rules | default list -}}
+  {{- if $rules -}}
+    {{- $matches := (first $rules).matches | default list -}}
+    {{- if $matches -}}
+      {{- with (first $matches).path -}}
+        {{- with .value -}}{{- $path = . -}}{{- end -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $parent := first (.Values.httpRoute.parentRefs | default list) }}
+  {{- if .Values.httpRoute.hostnames }}
+    {{- range .Values.httpRoute.hostnames }}
+    # Scheme and TLS come from the parent Gateway's listener, not from this chart.
+    export APP_URL="{{ . }}{{ $path }}"
+    {{- end }}
+  {{- else }}
+    {{- with $parent }}
+    export APP_HOSTNAME=$(kubectl get --namespace {{ .namespace | default $.Release.Namespace }} gateway/{{ .name }} -o jsonpath="{.spec.listeners[0].hostname}")
+    echo "Visit http://$APP_HOSTNAME{{ $path }} to use your application"
+    {{- end }}
+  {{- end }}
+  {{- with $parent }}
+  NOTE: the route only serves what the parent Gateway's listeners and your
+  HTTPRoute rules allow. Inspect the Gateway with:
+    kubectl get --namespace {{ .namespace | default $.Release.Namespace }} gateway/{{ .name }} -o yaml
+  {{- end }}
 {{- else if .Values.ingress.enabled }}
 {{- range $host := .Values.ingress.hosts }}
   {{- range .paths }}
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
   {{- end }}
 {{- end }}
-{{- else if contains "NodePort" .Values.service.type }}
-  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "jupyter-template.fullname" . }})
-  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
-  echo http://$NODE_IP:$NODE_PORT
-{{- else if contains "LoadBalancer" .Values.service.type }}
-     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-           You can watch its status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "jupyter-template.fullname" . }}'
-  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "jupyter-template.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
-  echo http://$SERVICE_IP:{{ .Values.service.port }}
-{{- else if contains "ClusterIP" .Values.service.type }}
+  NOTE: Jupyter keeps long-lived websockets open for terminals and kernels. If
+  your controller times out idle connections, raise the proxy read/send timeout
+  via ingress annotations (for nginx-ingress, proxy-read-timeout / -send-timeout).
+{{- else if eq "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ $fullName }})
+  export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "Visit http://$NODE_IP:$NODE_PORT to use your application"
+{{- else if eq "LoadBalancer" .Values.service.type }}
+     NOTE: it may take a few minutes for the LoadBalancer IP to be assigned.
+           Watch it with:
+           kubectl get --namespace {{ .Release.Namespace }} svc -w {{ $fullName }}
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ $fullName }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  export SERVICE_PORT=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ $fullName }} -o jsonpath="{.spec.ports[0].port}")
+  echo "Visit http://$SERVICE_IP:$SERVICE_PORT to use your application"
+{{- else }}
   export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "jupyter-template.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
-  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ $fullName }} 8080:{{ .Values.service.port }}
   echo "Visit http://127.0.0.1:8080 to use your application"
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Log in with the token:
+{{- if and .Values.token.injectEnv .Values.token.create (not .Values.token.existingSecret) }}
+  kubectl --namespace {{ .Release.Namespace }} get secret {{ $fullName }} \
+    -o jsonpath='{.data.token}' | base64 -d; echo
+  Then open the URL printed above and paste the token into the login form.
+  NOTE: leave token.value empty and Helm generates a random token on first
+  install, then keeps it stable across upgrades. Setting token.value is only
+  needed if you want a token you know in advance.
+{{- else if and .Values.token.injectEnv .Values.token.existingSecret }}
+  kubectl --namespace {{ .Release.Namespace }} get secret {{ .Values.token.existingSecret }} \
+    -o jsonpath='{.data.{{ .Values.token.existingSecretKey }}}' | base64 -d; echo
+{{- else if .Values.token.injectEnv }}
+  WARNING: token.injectEnv is enabled but neither token.create nor
+  token.existingSecret is set, so no JUPYTER_TOKEN was injected and Jupyter
+  generated a random one at startup. Set token.existingSecret or turn off
+  token.injectEnv.
+{{- else }}
+  No JUPYTER_TOKEN is injected (token.injectEnv=false). Configure auth with
+  extraArgs, for example a hashed password:
+    extraArgs:
+      - --PasswordIdentityProvider.hashed_password=<hash>
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+WARNING: persistence is disabled. Notebooks written to /home/jovyan are lost
+whenever the pod is rescheduled. Enable persistence.enabled, or mount your own
+volume at /home/jovyan/work via persistence.mountPath + volumes.
+{{- end }}
+{{- if gt (int .Values.replicaCount) 1 }}
+WARNING: replicaCount is {{ .Values.replicaCount }}. Each replica serves an
+isolated server with its own token and filesystem, and the Service routes
+users to different instances at random. This is almost never what you want.
 {{- end }}

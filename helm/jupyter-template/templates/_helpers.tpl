@@ -40,6 +40,7 @@ helm.sh/chart: {{ include "jupyter-template.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: {{ .Chart.Name }}
 {{- end }}
 
 {{/*
@@ -59,4 +60,40 @@ Create the name of the service account to use
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
+{{- end }}
+
+{{/*
+The container image reference, resolved from image.repository and either
+image.tag or .Chart.AppVersion.
+*/}}
+{{- define "jupyter-template.image" -}}
+{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
+{{- end }}
+
+{{/*
+Fully qualified name of the PVC backing the working directory. Empty when
+persistence is disabled, so callers can guard with `if`.
+*/}}
+{{- define "jupyter-template.pvcName" -}}
+{{- if .Values.persistence.enabled }}
+{{- default (include "jupyter-template.fullname" .) .Values.persistence.existingClaim }}
+{{- end }}
+{{- end }}
+
+{{/*
+Stable digest input for the pod's checksum/token-secret annotation. The token is
+injected via secretKeyRef, so the pod has to be restarted for a changed token to
+take effect. When no token exists yet (first install, auto-generated) this
+returns a constant, otherwise an upgrade would look like a change every time.
+*/}}
+{{- define "jupyter-template.tokenChecksum" -}}
+{{- if .Values.token.value -}}
+{{- .Values.token.value -}}
+{{- else if .Values.token.existingSecret -}}
+{{- printf "existingSecret/%s/%s" .Values.token.existingSecret .Values.token.existingSecretKey -}}
+{{- else if lookup "v1" "Secret" .Release.Namespace (include "jupyter-template.fullname" .) -}}
+{{- (index (lookup "v1" "Secret" .Release.Namespace (include "jupyter-template.fullname" .)).data "token") | toString -}}
+{{- else -}}
+{{- "generated-on-first-install" -}}
+{{- end -}}
 {{- end }}

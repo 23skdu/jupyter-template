@@ -21,3 +21,8 @@
 .idea/
 *.tmproj
 .vscode/
+
+# Unit test suites are for development only and are not shipped in the chart
+# package. The leading slash anchors this to the chart root, so the
+# templates/tests/ directory (which holds the `helm test` hook) is kept.
+/tests/

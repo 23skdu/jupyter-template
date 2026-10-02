@@ -1,0 +1,80 @@
+suite: horizontal pod autoscaler
+templates:
+  - hpa.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: renders nothing while autoscaling is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders an autoscaling/v2 HPA targeting the deployment
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+      - equal:
+          path: spec.scaleTargetRef
+          value:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: rel-jupyter-template
+
+  - it: emits only the CPU metric by default
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - equal:
+          path: spec.metrics
+          value:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+
+  - it: adds the memory metric when configured
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetMemoryUtilizationPercentage: 70
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 2
+      - equal:
+          path: spec.metrics[1].resource.name
+          value: memory
+      - equal:
+          path: spec.metrics[1].resource.target.averageUtilization
+          value: 70
+
+  - it: omits the CPU metric when it is set to null
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetCPUUtilizationPercentage: null
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 0
+
+  - it: honours min and max replicas
+    set:
+      autoscaling.enabled: true
+      autoscaling.minReplicas: 2
+      autoscaling.maxReplicas: 7
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 7

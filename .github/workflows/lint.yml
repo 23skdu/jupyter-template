@@ -3,26 +3,118 @@ name: Lint
 on:
   push:
     branches: [ main ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint-docker:
+    name: Dockerfile (hadolint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Hadolint
-        uses: hadolint/hadolint-action@v3.1.0
+        # Passes with no ignores: the upstream Jupyter image already installs
+        # every runtime dependency and sets up an apt post-invoke cleanup hook,
+        # so this Dockerfile deliberately adds no OS packages of its own.
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: Dockerfile
 
   lint-helm:
+    name: Helm ${{ matrix.helm }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Render and test against both supported major versions: Helm 4 is
+        # current, Helm 3 is what most clusters' tooling still runs.
+        # pluginArgs differs because Helm 4 verifies plugin signatures by
+        # default and cannot do that from a git checkout.
+        include:
+          - helm: v3.22.0
+            pluginArgs: ""
+          - helm: v4.3.0
+            pluginArgs: "--verify=false"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ matrix.helm }}
+
+      - name: Install helm-unittest plugin
+        # Installed from git rather than the oci:// artifact: the OCI path needs
+        # either Helm's OCI plugin support or a ghcr.io token, whereas git works
+        # on both majors. https://github.com/helm-unittest/helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git ${{ matrix.pluginArgs }}
+
+      - name: helm version
+        run: helm version
+
+      - name: Helm lint
+        run: helm lint helm/jupyter-template --strict
+
+      - name: Helm template (default values)
+        run: helm template ci helm/jupyter-template --namespace ci > /dev/null
+
+      - name: Helm template (all features enabled)
+        run: |
+          helm template ci helm/jupyter-template --namespace ci \
+            --set ingress.enabled=true \
+            --set ingress.className=nginx \
+            --set persistence.enabled=true \
+            --set spark.ui.enabled=true \
+            --set autoscaling.enabled=true \
+            --set serviceAccount.automount=true \
+            --set extraEnv[0].name=AWS_REGION \
+            --set extraEnv[0].value=eu-north-1 > /dev/null
+
+      - name: Helm unittest
+        run: helm unittest helm/jupyter-template --strict
+
+  lint-yaml:
+    name: YAML and workflow syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Helm
-        uses: azure/setup-helm@v4.2.0
+      - uses: actions/checkout@v5
+
+      - name: yamllint
+        uses: ibiqlik/action-yamllint@v3
         with:
-          version: v3.14.4
-      - name: Helm Lint
-        run: helm lint helm/jupyter-template
+          # Helm templates are Go templates, not valid YAML on their own, so
+          # only the static YAML in the repo is linted.
+          config: |
+            extends: default
+            ignore: |
+              helm/jupyter-template/templates/
+              helm/jupyter-template/tests/
+            rules:
+              line-length:
+                max: 160
+                allow-non-breakable-words: true
+              document-start:
+                present: false
+              # GitHub Actions workflow keys use `on:`, and its bracket style
+              # and inline mapping spacing are not the yamllint defaults.
+              truthy:
+                allowed-values: ['true', 'false', 'on']
+              brackets:
+                max-spaces-inside: 1
+              braces:
+                max-spaces-inside: 1
+              comments:
+                min-spaces-from-content: 1
+
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color

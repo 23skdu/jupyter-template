@@ -1,6 +1,7 @@
 {{- if .Values.httpRoute.enabled -}}
 {{- $fullName := include "jupyter-template.fullname" . -}}
 {{- $svcPort := .Values.service.port -}}
+{{- $portName := "http" -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -12,27 +13,35 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  {{- with .Values.httpRoute.parentRefs }}
   parentRefs:
-    {{- with .Values.httpRoute.parentRefs }}
-      {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- with .Values.httpRoute.hostnames }}
   hostnames:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
-    {{- range .Values.httpRoute.rules }}
-    {{- with .matches }}
-    - matches:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .filters }}
-      filters:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-      backendRefs:
-        - name: {{ $fullName }}
-          port: {{ $svcPort }}
-          weight: 1
-    {{- end }}
+  {{- /*
+  Assemble the rules as a list of maps and emit them in one go. backendRefs is
+  always generated here and cannot be overridden, so merging the user's matches
+  and filters into a generated base rule keeps the output well formed whether or
+  not a rule has any matches.
+  */ -}}
+  {{- $rules := list -}}
+  {{- range .Values.httpRoute.rules }}
+  {{- $rule := dict "backendRefs" (list (dict "group" "" "kind" "Service" "name" $fullName "namespace" $.Release.Namespace "port" $svcPort "weight" 1)) }}
+  {{- with .matches }}
+  {{- $rule = merge $rule (dict "matches" .) }}
+  {{- end }}
+  {{- with .filters }}
+  {{- $rule = merge $rule (dict "filters" .) }}
+  {{- end }}
+  {{- $rules = append $rules $rule }}
+  {{- end }}
+  {{- toYaml $rules | nindent 4 }}
+  {{- with .Values.httpRoute.timeouts }}
+  timeouts:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

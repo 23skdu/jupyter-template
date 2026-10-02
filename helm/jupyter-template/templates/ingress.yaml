@@ -1,8 +1,10 @@
 {{- if .Values.ingress.enabled -}}
+{{- $fullName := include "jupyter-template.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "jupyter-template.fullname" . }}
+  name: {{ $fullName }}
   labels:
     {{- include "jupyter-template.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
@@ -29,15 +31,13 @@ spec:
       http:
         paths:
           {{- range .paths }}
-          - path: {{ .path }}
-            {{- with .pathType }}
-            pathType: {{ . }}
-            {{- end }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType | default "Prefix" }}
             backend:
               service:
-                name: {{ include "jupyter-template.fullname" $ }}
+                name: {{ $fullName }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ $svcPort }}
           {{- end }}
     {{- end }}
 {{- end }}

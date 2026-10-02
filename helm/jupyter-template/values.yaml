@@ -1,161 +1,294 @@
 # Default values for jupyter-template.
 # This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# Every value below is validated against values.schema.json on `helm install`,
+# `helm upgrade` and `helm template`.
 
-# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+# Number of notebook server replicas.
+# Keep this at 1: Jupyter Server is stateful (open terminals, kernels, a single
+# token) and is not safe to load balance. Use a StatefulSet or JupyterHub if you
+# need more than one.
+# https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 
-# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
   repository: ghcr.io/23skdu/jupyter-template
-  # This sets the pull policy for images.
+  # https://kubernetes.io/docs/concepts/containers/images/
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: "latest"
+  # Overrides the image tag. Empty string means "use .Chart.AppVersion".
+  tag: ""
 
-# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+# Secrets used to pull the image from a private registry.
+# https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
-# This is to override the chart name.
+
 nameOverride: ""
 fullnameOverride: ""
 
-# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
-  # Specifies whether a service account should be created
   create: true
-  # Automatically mount a ServiceAccount's API credentials?
-  automount: true
-  # Annotations to add to the service account
+  # Mount the ServiceAccount API token into the pod. Jupyter does not talk to
+  # the Kubernetes API, so this stays off unless you are exec'ing via the API.
+  # https://kubernetes.io/docs/concepts/security/service-accounts/
+  automount: false
   annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
+  # Name of the ServiceAccount to use. Generated from the fullname template if
+  # left empty and create is true.
   name: ""
 
-# This is for setting Kubernetes Annotations to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+# https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 podAnnotations: {}
-# This is for setting Kubernetes Labels to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+# https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+podSecurityContext:
+  # Supplemental group `users` (gid 100) owns /home/jovyan and /opt/conda in the
+  # upstream image, so giving the pod that group keeps both writable even when
+  # the uid is overridden by a cluster (OpenShift, ACK, EKS Pod Identity, ...).
+  fsGroup: 100
+  fsGroupChangePolicy: OnRootMismatch
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
 
-# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+# Extra arguments appended to the container CMD (`start-notebook.py`).
+# Every value is forwarded verbatim to jupyter-server, e.g.
+#   extraArgs:
+#     - --ServerApp.base_url=/jupyter/
+#     - --ServerApp.root_dir=/home/jovyan/work
+# https://jupyter-server.readthedocs.io/en/latest/operators/public-server.html
+extraArgs: []
+
+# Environment variables interpreted by the upstream start.sh entrypoint.
+# These MUST be set together with `securityContext.runAsNonRoot: false` and
+# `podSecurityContext.fsGroup`, because the entrypoint only applies NB_UID /
+# NB_GID / CHOWN_HOME / GRANT_SUDO when it starts as root and then drops
+# privileges itself.
+jupyterEnv:
+  # - name: NB_USER
+  #   value: jovyan
+  # - name: NB_UID
+  #   value: "1000"
+  # - name: NB_GID
+  #   value: "1000"
+  # - name: CHOWN_HOME
+  #   value: "yes"
+  # - name: CHOWN_HOME_OPTS
+  #   value: -R
+  # - name: GRANT_SUDO
+  #   value: "yes"
+  # - name: GEN_CERT
+  #   value: "yes"
+  # - name: DOCKER_STACKS_JUPYTER_CMD
+  #   value: notebook
+  # - name: NOTEBOOK_ARGS
+  #   value: --log-level=DEBUG
+  # - name: JUPYTER_PORT
+  #   value: "8888"
+  []
+
+# Free-form environment variables, useful for cloud credentials or Spark config.
+# Value is rendered verbatim, so quote anything non-numeric.
+#
+# The image ships Spark as a distribution under /usr/local/spark with
+# pyspark.zip, not as an installed package, so notebooks need PYTHONPATH set
+# before `import pyspark` works:
+#
+#   extraEnv:
+#     - name: PYTHONPATH
+#       value: /usr/local/spark/python:/usr/local/spark/python/lib/py4j-0.10.9.9-src.zip
+#
+# (Find the exact py4j filename with `ls /usr/local/spark/python/lib`.)
+# https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/
+extraEnv: []
+#  - name: AWS_REGION
+#    value: eu-north-1
+#  - name: SPARK_REMOTE
+#    value: spark://spark-master:7077
+
+# Reference existing ConfigMaps/Secrets, or use `createSecret` to have the chart
+# generate one from `secretData`.
+# https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/
+envFrom: []
+#  - secretRef:
+#      name: jupyter-cloud-credentials
+
+# Create a Secret from `secretData` and inject it as JUPYTER_TOKEN.
+token:
+  # Create the Secret. Set to false to reference an existing Secret instead.
+  create: true
+  # Literal JUPYTER_TOKEN value. Leave empty to have Helm generate a random
+  # token on every upgrade, which invalidates existing sessions and bookmarks.
+  # Set once and keep it if you want a stable URL.
+  value: ""
+  # Alternative to `value`: point at a pre-existing Secret and key.
+  existingSecret: ""
+  existingSecretKey: token
+  # Pass the token to the container as the JUPYTER_TOKEN env var.
+  # Set to false if you prefer password auth via NOTEBOOK_ARGS instead.
+  injectEnv: true
+
+# https://kubernetes.io/docs/concepts/services-networking/service/
 service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  # https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: ClusterIP
-  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+  # https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
   port: 8888
+  annotations: {}
+  labels: {}
 
-# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+# https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
   enabled: false
   className: ""
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  # kubernetes.io/ingress.class: nginx
+  # cert-manager.io/cluster-issuer: letsencrypt
+  # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
   hosts:
-    - host: chart-example.local
+    - host: jupyter.local
       paths:
         - path: /
-          pathType: ImplementationSpecific
+          pathType: Prefix
   tls: []
-  #  - secretName: chart-example-tls
+  #  - secretName: jupyter-tls
   #    hosts:
-  #      - chart-example.local
+  #      - jupyter.local
 
 # -- Expose the service via gateway-api HTTPRoute
-# Requires Gateway API resources and suitable controller installed within the cluster
-# (see: https://gateway-api.sigs.k8s.io/guides/)
+# Requires Gateway API v1 CRDs and a suitable controller in the cluster.
+# https://gateway-api.sigs.k8s.io/guides/
 httpRoute:
-  # HTTPRoute enabled.
   enabled: false
-  # HTTPRoute annotations.
   annotations: {}
-  # Which Gateways this Route is attached to.
+  # Which Gateways this Route attaches to.
   parentRefs:
-  - name: gateway
-    sectionName: http
-    # namespace: default
-  # Hostnames matching HTTP header.
+    - name: gateway
+      sectionName: http
+      # namespace: default
+  # Hostnames matching the HTTP Host header.
   hostnames:
-  - chart-example.local
-  # List of rules and filters applied.
+    - jupyter.local
+  # Rules applied to the route. backendRefs is generated automatically and
+  # cannot be overridden.
   rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /headers
-  #   filters:
-  #   - type: RequestHeaderModifier
-  #     requestHeaderModifier:
-  #       set:
-  #       - name: My-Overwrite-Header
-  #         value: this-is-the-only-value
-  #       remove:
-  #       - User-Agent
-  # - matches:
-  #   - path:
-  #       type: PathPrefix
-  #       value: /echo
-  #     headers:
-  #     - name: version
-  #       value: v2
+    # Example of a rule that also rewrites request headers:
+    # - matches:
+    #     - path:
+    #         type: PathPrefix
+    #         value: /
+    #   filters:
+    #     - type: RequestHeaderModifier
+    #       requestHeaderModifier:
+    #         set:
+    #           - name: X-Overwrite
+    #             value: yes
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+# Spark's UI listens on 4040 and increments the port for every extra Spark
+# context. Exposing it is useful for inspecting jobs from outside the cluster.
+# https://spark.apache.org/docs/latest/monitoring.html
+spark:
+  ui:
+    enabled: false
+    port: 4040
 
-# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+# https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+# The upstream image ships the whole scientific Python + R + Spark stack, so it
+# needs a non-trivial request to schedule reliably.
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 4Gi
+
+# Give in-flight kernel sessions and terminal connections time to drain.
+terminationGracePeriodSeconds: 30
+
+# https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+# A cold Spark session can take a minute or more to bind the server, so the
+# startupProbe is what actually gates the readiness/liveness probes.
+startupProbe:
+  httpGet:
+    path: /
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
 livenessProbe:
   httpGet:
     path: /
     port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
 readinessProbe:
   httpGet:
     path: /
     port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
 
-# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+# Autoscaling is off by default and not recommended for Jupyter: scaling to
+# more than one replica gives users separate, isolated servers with separate
+# tokens and filesystems.
+# https://kubernetes.io/docs/concepts/workloads/autoscaling/
 autoscaling:
   enabled: false
   minReplicas: 1
-  maxReplicas: 100
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
-# Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+# Persist the working directory so notebooks survive pod restarts. Without this
+# the chart deploys a Deployment, whose filesystem is discarded on every reschedule.
+# https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+persistence:
+  enabled: false
+  # Use an existing PVC instead of creating one.
+  existingClaim: ""
+  # https://kubernetes.io/docs/concepts/storage/persistent-volumes/#storage-classes
+  # storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  # Mounted under the jovyan home directory so the container (uid 1000) can
+  # write to it without changing ownership of the rest of $HOME.
+  mountPath: /home/jovyan/work
+  annotations: {}
+  labels: {}
+  # Bind the claim at /home/jovyan instead of mountPath. Use this when a
+  # ReadWriteMany claim should hold the whole home directory, including
+  # .local/share/jupyter runtime files.
+  homeVolume: false
 
-# Additional volumeMounts on the output Deployment definition.
+# Additional volumes on the pod spec.
+# https://kubernetes.io/docs/concepts/storage/volumes/
+volumes: []
+# - name: dask-config
+#   configMap:
+#     name: dask-config
+
+# Additional volumeMounts on the container.
+# https://kubernetes.io/docs/concepts/storage/volumes/
 volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+# - name: dask-config
+#   mountPath: /etc/dask
 
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
+
+topologySpreadConstraints: []

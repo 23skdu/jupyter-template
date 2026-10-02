@@ -1,0 +1,182 @@
+suite: httproute
+templates:
+  - httproute.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: renders nothing while httpRoute is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a Gateway API v1 HTTPRoute with the default config
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: apiVersion
+          value: gateway.networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: rel-jupyter-template
+      - equal:
+          path: spec.parentRefs
+          value:
+            - name: gateway
+              sectionName: http
+      - equal:
+          path: spec.hostnames
+          value:
+            - jupyter.local
+
+  - it: generates a fully qualified backendRef to the chart service
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - equal:
+          path: spec.rules
+          value:
+            - matches:
+                - path:
+                    type: PathPrefix
+                    value: /
+              backendRefs:
+                - group: ""
+                  kind: Service
+                  name: rel-jupyter-template
+                  namespace: ns
+                  port: 8888
+                  weight: 1
+
+  - it: follows a custom service port and namespace in the backendRef
+    set:
+      httpRoute.enabled: true
+      service.port: 9999
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 9999
+      - equal:
+          path: spec.rules[0].backendRefs[0].namespace
+          value: ns
+
+  - it: renders multiple rules with filters
+    set:
+      httpRoute.enabled: true
+      httpRoute.rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+        - matches:
+            - path:
+                type: Exact
+                value: /healthz
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: X-Source
+                    value: jupyter
+    asserts:
+      - lengthEqual:
+          path: spec.rules
+          count: 2
+      - equal:
+          path: spec.rules[1].matches
+          value:
+            - path:
+                type: Exact
+                value: /healthz
+      - lengthEqual:
+          path: spec.rules[1].filters
+          count: 1
+      - equal:
+          path: spec.rules[1].backendRefs[0].name
+          value: rel-jupyter-template
+
+  - it: renders a rule with no matches at all
+    set:
+      httpRoute.enabled: true
+      httpRoute.rules:
+        - filters:
+            - type: RequestRedirect
+              requestRedirect:
+                scheme: https
+    asserts:
+      - notExists:
+          path: spec.rules[0].matches
+      - exists:
+          path: spec.rules[0].backendRefs
+
+  - it: keeps matches and backendRefs as siblings under one list item
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.rules
+          count: 1
+      - lengthEqual:
+          path: spec.rules[0].matches
+          count: 1
+      - lengthEqual:
+          path: spec.rules[0].backendRefs
+          count: 1
+
+  - it: renders parentRefs with a namespace
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: gateway
+          namespace: gateway-system
+          sectionName: https
+    asserts:
+      - equal:
+          path: spec.parentRefs
+          value:
+            - name: gateway
+              namespace: gateway-system
+              sectionName: https
+
+  - it: omits hostnames when none are configured
+    set:
+      httpRoute.enabled: true
+      httpRoute.hostnames: null
+    asserts:
+      - notExists:
+          path: spec.hostnames
+
+  - it: renders route timeouts for long-lived notebook connections
+    set:
+      httpRoute.enabled: true
+      httpRoute.timeouts:
+        request: 24h
+        backendRequest: 24h
+    asserts:
+      - equal:
+          path: spec.timeouts
+          value:
+            request: 24h
+            backendRequest: 24h
+
+  - it: omits timeouts when not configured
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - notExists:
+          path: spec.timeouts
+
+  - it: renders annotations
+    set:
+      httpRoute.enabled: true
+      httpRoute.annotations:
+        team: platform
+    asserts:
+      - equal:
+          path: metadata.annotations.team
+          value: platform

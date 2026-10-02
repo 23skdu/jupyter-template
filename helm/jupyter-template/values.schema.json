@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "jupyter-template values",
+  "description": "Schema for the jupyter-template Helm chart values.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of notebook server replicas. Keep at 1: Jupyter is stateful and not load balanced."
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Empty string falls back to .Chart.AppVersion."
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "global": { "type": "object" },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "automount": { "type": "boolean" },
+        "annotations": { "type": ["object", "null"] },
+        "name": { "type": "string" }
+      }
+    },
+    "podAnnotations": { "type": ["object", "null"] },
+    "podLabels": { "type": ["object", "null"] },
+    "podSecurityContext": { "type": ["object", "null"] },
+    "securityContext": { "type": ["object", "null"] },
+    "extraArgs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Arguments appended to start-notebook.py."
+    },
+    "jupyterEnv": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/envVar" },
+      "description": "Env vars consumed by the upstream start.sh entrypoint."
+    },
+    "extraEnv": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/envVar" }
+    },
+    "envFrom": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "token": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "value": {
+          "type": "string",
+          "description": "Literal JUPYTER_TOKEN. Empty means generate one on first install and reuse it afterwards."
+        },
+        "existingSecret": { "type": "string" },
+        "existingSecretKey": { "type": "string", "minLength": 1 },
+        "injectEnv": { "type": "boolean" },
+        "annotations": { "type": ["object", "null"] }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "port"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": ["object", "null"] },
+        "labels": { "type": ["object", "null"] }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": ["object", "null"] },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["host"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["path"],
+                  "properties": {
+                    "path": { "type": "string", "minLength": 1 },
+                    "pathType": { "type": "string", "enum": ["Exact", "Prefix", "ImplementationSpecific"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["secretName"],
+            "properties": {
+              "secretName": { "type": "string", "minLength": 1 },
+              "hosts": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "httpRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "annotations": { "type": ["object", "null"] },
+        "parentRefs": { "type": "array", "items": { "type": "object" } },
+        "hostnames": { "type": "array", "items": { "type": "string" } },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "matches": { "type": "array", "items": { "type": "object" } },
+              "filters": { "type": "array", "items": { "type": "object" } }
+            }
+          }
+        },
+        "timeouts": { "type": "object" }
+      }
+    },
+    "spark": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ui": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        }
+      }
+    },
+    "resources": { "type": ["object", "null"] },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+    "startupProbe": { "type": ["object", "null"] },
+    "livenessProbe": { "type": ["object", "null"] },
+    "readinessProbe": { "type": ["object", "null"] },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingClaim": { "type": "string" },
+        "storageClass": {
+          "type": ["string", "null"],
+          "description": "StorageClass name, or \"-\" for no class at all. Null means use the cluster default."
+        },
+        "accessModes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"] }
+        },
+        "size": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(E|P|T|G|M|k|Ei|Pi|Ti|Gi|Mi|Ki)?$" },
+        "mountPath": { "type": "string", "pattern": "^/.*" },
+        "homeVolume": { "type": "boolean" },
+        "annotations": { "type": ["object", "null"] },
+        "labels": { "type": ["object", "null"] }
+      }
+    },
+    "volumes": { "type": "array", "items": { "type": "object" } },
+    "volumeMounts": { "type": "array", "items": { "type": "object" } },
+    "nodeSelector": { "type": ["object", "null"] },
+    "tolerations": { "type": "array", "items": { "type": "object" } },
+    "affinity": { "type": ["object", "null"] },
+    "topologySpreadConstraints": { "type": "array", "items": { "type": "object" } }
+  },
+  "definitions": {
+    "envVar": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "valueFrom": { "type": "object" }
+      }
+    }
+  }
+}

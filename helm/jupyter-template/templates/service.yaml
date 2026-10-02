@@ -4,12 +4,25 @@ metadata:
   name: {{ include "jupyter-template.fullname" . }}
   labels:
     {{- include "jupyter-template.labels" . | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
+    - name: http
+      port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP
-      name: http
+    {{- if .Values.spark.ui.enabled }}
+    - name: spark-ui
+      port: {{ .Values.spark.ui.port }}
+      targetPort: spark-ui
+      protocol: TCP
+    {{- end }}
   selector:
     {{- include "jupyter-template.selectorLabels" . | nindent 4 }}

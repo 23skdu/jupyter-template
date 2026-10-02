@@ -1,0 +1,122 @@
+# The helper templates in templates/_helpers.tpl cannot be rendered directly by
+# helm-unittest, so each helper is exercised through the resource that consumes
+# it. Naming and truncation rules are Kubernetes DNS-label constraints, so they
+# are worth pinning down here.
+suite: helpers
+templates:
+  - service.yaml
+  - serviceaccount.yaml
+release:
+  name: rel
+  namespace: ns
+tests:
+  - it: builds the fullname from release name plus chart name
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: rel-jupyter-template
+
+  - it: uses the release name alone when it already contains the chart name
+    release:
+      name: my-jupyter-template
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: my-jupyter-template
+
+  - it: honours fullnameOverride
+    set:
+      fullnameOverride: nb
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: nb
+      - equal:
+          documentIndex: 1
+          path: metadata.name
+          value: nb
+
+  - it: honours nameOverride in labels but not in the fullname
+    template: service.yaml
+    set:
+      nameOverride: notebook
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: spec.selector['app.kubernetes.io/name']
+          value: notebook
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: rel-notebook
+
+  - it: prefers fullnameOverride over nameOverride
+    template: service.yaml
+    set:
+      fullnameOverride: nb
+      nameOverride: notebook
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: nb
+      - equal:
+          documentIndex: 0
+          path: spec.selector['app.kubernetes.io/name']
+          value: notebook
+
+  - it: truncates the fullname to the 63 character DNS limit
+    release:
+      name: this-is-a-very-long-release-name-that-hits-the-limit
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: this-is-a-very-long-release-name-that-hits-the-limit-jupyter-te
+
+  - it: trims a trailing dash left by truncation
+    set:
+      fullnameOverride: ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc-
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.name
+          value: ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+
+  - it: derives the service account name from the fullname
+    asserts:
+      - equal:
+          documentIndex: 1
+          path: metadata.name
+          value: rel-jupyter-template
+
+  - it: builds the chart label from chart name and version
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.labels['helm.sh/chart']
+          value: jupyter-template-0.2.0
+
+  - it: sets the app version label from Chart.appVersion
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.labels['app.kubernetes.io/version']
+          value: "2026-09-29"
+
+  - it: marks the release as managed by Helm
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.labels['app.kubernetes.io/managed-by']
+          value: Helm
+
+  - it: tags resources as part of the chart
+    asserts:
+      - equal:
+          documentIndex: 0
+          path: metadata.labels['app.kubernetes.io/part-of']
+          value: jupyter-template
