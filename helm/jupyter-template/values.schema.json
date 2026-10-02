@@ -154,6 +154,14 @@
         "timeouts": { "type": "object" }
       }
     },
+    "testConnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "scheme": { "type": "string", "enum": ["http", "https"] }
+      }
+    },
     "spark": {
       "type": "object",
       "additionalProperties": false,

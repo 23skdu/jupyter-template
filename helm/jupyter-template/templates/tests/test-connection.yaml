@@ -1,3 +1,4 @@
+{{- if .Values.testConnection.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -21,10 +22,14 @@ spec:
       command:
         - wget
       args:
-        # --spider so the probe never downloads a body; busybox returns 0 for
-        # any reachable HTTP status, including Jupyter's redirect to /login.
+        # --spider on busybox issues a GET (GNU wget would use HEAD, which
+        # Jupyter answers with 405) and skips writing the body.
         - "--spider"
-        - "{{ include "jupyter-template.fullname" . }}:{{ .Values.service.port }}"
+        # The image sets GEN_CERT=yes, so the server speaks HTTPS with a
+        # self-signed certificate. Verification is off because there is nothing
+        # to verify against; this only proves the port is serving.
+        - "--no-check-certificate"
+        - "{{ .Values.testConnection.scheme }}://{{ include "jupyter-template.fullname" . }}:{{ .Values.service.port }}/"
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
@@ -38,3 +43,4 @@ spec:
         limits:
           memory: 32Mi
   restartPolicy: Never
+{{- end }}

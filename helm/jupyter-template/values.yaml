@@ -193,6 +193,13 @@ httpRoute:
             type: PathPrefix
             value: /
 
+# The `helm test` pod that checks the Service is actually serving.
+testConnection:
+  enabled: true
+  # The image sets GEN_CERT=yes and serves HTTPS with a self-signed certificate.
+  # Switch to http only if you turn GEN_CERT off via jupyterEnv or extraArgs.
+  scheme: https
+
 # Spark's UI listens on 4040 and increments the port for every extra Spark
 # context. Exposing it is useful for inspecting jobs from outside the cluster.
 # https://spark.apache.org/docs/latest/monitoring.html

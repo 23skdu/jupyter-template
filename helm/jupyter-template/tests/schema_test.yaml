@@ -147,6 +147,12 @@ tests:
     asserts:
       - failedTemplate: {}
 
+  - it: rejects an unknown testConnection scheme
+    set:
+      testConnection.scheme: ftp
+    asserts:
+      - failedTemplate: {}
+
   - it: rejects a boolean where a string is expected
     set:
       image.tag: true

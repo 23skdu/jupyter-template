@@ -30,7 +30,7 @@ tests:
           path: metadata.annotations['helm.sh/hook-delete-policy']
           pattern: hook-succeeded
 
-  - it: targets the service on the configured port
+  - it: targets the service over HTTPS, because the image sets GEN_CERT=yes
     asserts:
       - equal:
           path: spec.containers[0].command
@@ -40,7 +40,25 @@ tests:
           path: spec.containers[0].args
           value:
             - --spider
-            - rel-jupyter-template:8888
+            - --no-check-certificate
+            - https://rel-jupyter-template:8888/
+
+  - it: skips certificate verification, as the certificate is self-signed
+    asserts:
+      - contains:
+          path: spec.containers[0].args
+          content: --no-check-certificate
+
+  - it: can target plain HTTP when GEN_CERT is turned off
+    set:
+      testConnection.scheme: http
+    asserts:
+      - equal:
+          path: spec.containers[0].args
+          value:
+            - --spider
+            - --no-check-certificate
+            - http://rel-jupyter-template:8888/
 
   - it: follows a custom service port
     set:
@@ -50,7 +68,15 @@ tests:
           path: spec.containers[0].args
           value:
             - --spider
-            - rel-jupyter-template:9999
+            - --no-check-certificate
+            - https://rel-jupyter-template:9999/
+
+  - it: is not created when disabled
+    set:
+      testConnection.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
 
   - it: follows fullnameOverride so the probe targets the right service
     set:
@@ -61,7 +87,7 @@ tests:
           value: nb-test-connection
       - contains:
           path: spec.containers[0].args
-          content: nb:8888
+          content: https://nb:8888/
 
   - it: pins the busybox image to a version
     asserts:
