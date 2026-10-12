@@ -22,10 +22,11 @@ TOOLS    := $(ROOT)/bin
 
 CHART          := $(ROOT)/helm/jupyter-template
 ALL_FEATURES   := $(TESTS_DIR)/values-all-features.yaml
+REQUIREMENTS   := $(TESTS_DIR)/requirements.txt
 YAMLLINT_CONF  := $(ROOT)/.yamllint
 
 # Pinned to the versions CI uses. hadolint floats in CI (hadolint-action does
-# not pin it) and yamllint floats via pip, so these are a known-good floor.
+# not pin it). yamllint is pinned in requirements.txt so Dependabot can track it.
 HELM3_VERSION       := v3.22.0
 HELM4_VERSION       := v4.3.0
 HADOLINT_VERSION    := v2.14.0
@@ -289,5 +290,5 @@ _fetch-yamllint:
 		echo "==> creating yamllint venv"; \
 		python3 -m venv "$(TOOLS)/yamllint"; \
 		"$(TOOLS)/yamllint/bin/pip" install --quiet --upgrade pip; \
-		"$(TOOLS)/yamllint/bin/pip" install --quiet yamllint; \
+		"$(TOOLS)/yamllint/bin/pip" install --quiet -r "$(REQUIREMENTS)"; \
 	fi

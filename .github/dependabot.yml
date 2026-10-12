@@ -1,0 +1,54 @@
+# Dependabot configuration.
+#
+# Covers every dependency surface in this repo that Dependabot is able to parse.
+# Two surfaces are deliberately absent, because Dependabot cannot read them:
+#
+#   - `uses: docker://rhysd/actionlint:1.7.12` in .github/workflows/lint.yml.
+#     The github-actions parser explicitly rejects `docker://` references
+#     (dependabot/dependabot-core#8362), so that version is bumped by hand.
+#   - The `org.opencontainers.image.base.name` LABEL in the Dockerfile. LABELs
+#     are not parsed for dependencies, so this line is updated alongside the
+#     FROM line by hand when the base tag moves.
+#
+# Both base-tag lines (FROM and LABEL) must stay in sync when one is bumped.
+
+version: 2
+
+updates:
+  # The GitHub Actions used by build.yml and lint.yml. These move fast and the
+  # major-version tags mean an update is picked up automatically.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # All action bumps go through CI together, so a matrix run covers them
+      # rather than one PR per action.
+      actions:
+        patterns: ["*"]
+
+  # The base images in Dockerfile and Dockerfile.tensorflow. Dependabot matches
+  # any file whose name contains "dockerfile", so one entry at "/" covers both,
+  # and Dependabot understands yyyy-mm-dd tags and will move 2026-10-11 forward
+  # to the next upstream release date independently in each file.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      # Upstream publishes date tags roughly weekly, so a daily check finds
+      # nothing new most days.
+      interval: "weekly"
+
+  # docker-compose.yml. It has no `image:` keys today, since every service
+  # builds from a local Dockerfile. Registered anyway so it starts working the
+  # moment a service pins a published image.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # yamllint and anything else the test tooling installs from PyPI. Pinned in
+  # tests/requirements.txt, which `make -C tests tools` installs into a venv.
+  - package-ecosystem: "pip"
+    directory: "/tests"
+    schedule:
+      interval: "weekly"

@@ -6,8 +6,9 @@ deploys it to Kubernetes.
 | | |
 | --- | --- |
 | Base image | [`quay.io/jupyter/all-spark-notebook`](https://quay.io/repository/jupyter/all-spark-notebook) |
-| Base tag | `2026-09-29` |
+| Base tag | `2026-10-11` |
 | Included | JupyterLab 4.6, Notebook 7.6, Jupyter Server 2.21, Python 3.13, R 4.5, Spark 4.2, Java 21 |
+| TensorFlow variant | `Dockerfile.tensorflow`, from [`quay.io/jupyter/tensorflow-notebook`](https://quay.io/repository/jupyter/tensorflow-notebook), TensorFlow 2.21 |
 | Architectures | `linux/amd64`, `linux/arm64` |
 | Chart | `helm/jupyter-template`, `apiVersion: v2`, Helm 3.22+ and 4.x |
 | Chart schema | `values.schema.json` (validated on install, upgrade and template) |
@@ -21,6 +22,7 @@ deploys it to Kubernetes.
 - [Quick start with Docker](#quick-start-with-docker)
 - [Running it with Docker Compose](#running-it-with-docker-compose)
 - [Using Spark](#using-spark)
+- [Using TensorFlow](#using-tensorflow)
 - [Deploying with Helm](#deploying-with-helm)
   - [Getting the token](#getting-the-token)
   - [Persisting notebooks](#persisting-notebooks)
@@ -33,6 +35,7 @@ deploys it to Kubernetes.
   - [Running it with Docker Compose](#running-it-with-docker-compose)
   - [Building](#building)
   - [Chart tests](#chart-tests)
+  - [Dependency updates](#dependency-updates)
 - [Migrating from the previous version](#migrating-from-the-previous-version)
 - [Licence](#licence)
 
@@ -45,8 +48,9 @@ repository exists to pin one known-good combination and add only what a
 deployment actually needs:
 
 - **Pinned upstream release.** The base image is pinned to a dated tag rather
-  than `latest`, so a rebuild is reproducible. Override with
-  `--build-arg BASE_TAG=...`.
+  than `latest`, so a rebuild is reproducible. The tag is written out literally
+  in the Dockerfile so [Dependabot](#dependency-updates) can bump it; to build
+  against a different release, edit that one line.
 - **Registry moved to Quay.io.** The Jupyter project stopped pushing to Docker
   Hub in October 2023; the Docker Hub copies are frozen and no longer receive
   security fixes. This image builds from `quay.io`.
@@ -167,6 +171,50 @@ port and a matching Service port.
 > **Note:** the `pyspark` launcher script is broken in the current upstream
 > release (`Running python applications through 'pyspark' is not supported`).
 > Use `spark-submit`, as above.
+
+## Using TensorFlow
+
+`Dockerfile.tensorflow` builds the same JupyterLab server on top of
+[`quay.io/jupyter/tensorflow-notebook`](https://quay.io/repository/jupyter/tensorflow-notebook)
+instead of the Spark image. It ships TensorFlow as an ordinary installed Python
+package, so there is no `PYTHONPATH` juggling:
+
+```bash
+docker compose --profile tensorflow up --build
+# or
+docker run --rm -p 8888:8888 -e JUPYTER_TOKEN=change-me \
+  ghcr.io/23skdu/jupyter-template-tensorflow:latest
+```
+
+In a notebook, `import tensorflow` just works.
+
+Two differences from the Spark image are worth knowing:
+
+- **No second port.** TensorBoard is served by `jupyter-server-proxy` on the
+  same port, under `/proxy/6006/`, rather than on a port of its own like the
+  Spark UI. Nothing extra to publish, and the chart's `spark.ui` values do not
+  apply to this image.
+- **Memory.** Training runs want more than the chart's default 1Gi request. Raise
+  `resources` before running anything non-trivial.
+
+### Using a GPU
+
+The upstream project publishes a separate CUDA build. Point
+`Dockerfile.tensorflow` at the `cuda-` tag prefix and pass the device through:
+
+```bash
+# in Dockerfile.tensorflow
+FROM quay.io/jupyter/tensorflow-notebook:cuda-2026-10-11
+```
+
+```bash
+docker run --rm --gpus all -p 8888:8888 -e JUPYTER_TOKEN=change-me \
+  jupyter-template-tensorflow:local
+```
+
+On Kubernetes, the chart's `resources.limits` must include `nvidia.com/gpu`, and
+the node needs the NVIDIA device plugin plus a matching driver. Confirm from
+inside a notebook with `nvidia-smi` and `tf.config.list_physical_devices()`.
 
 ## Deploying with Helm
 
@@ -449,7 +497,7 @@ Compose defaults, all overridable via the environment or a `.env` file:
 | `JUPYTER_TOKEN` | `dev-only-notebook-token` | **Change this.** Login token. |
 | `JUPYTER_PORT` | `8888` | Host port for Jupyter Server. |
 | `SPARK_UI_PORT` | `4040` | Host port for the Spark UI. |
-| `BASE_IMAGE` / `BASE_TAG` | quay.io, `2026-09-29` | Upstream base to build from. |
+| `TENSORFLOW_PORT` | `8889` | Host port for the TensorFlow service, so it does not clash with `JUPYTER_PORT`. |
 | `DOCKER_USER` | `1000` | uid for the `shell` service. |
 
 Notebooks live in the `jupyter-work` named volume at `/home/jovyan/work`, which
@@ -462,11 +510,11 @@ certificate verification off (Jupyter answers `HEAD` on `/` with 405).
 
 ```bash
 docker build -t jupyter-template:dev .
-docker build -t jupyter-template:dev --build-arg BASE_TAG=spark-4.2.0 .
+docker build -t jupyter-template-tensorflow:dev -f Dockerfile.tensorflow .
 ```
 
-The build context is limited to the `Dockerfile` by `.dockerignore`, so CI and
-local builds do not upload the chart, workflows or docs.
+The build context is limited to the two `Dockerfile*` files by `.dockerignore`,
+so CI and local builds do not upload the chart, workflows or docs.
 
 Run it:
 
@@ -511,6 +559,35 @@ The suites hold 152 assertions across 11 files.
 - **yamllint** over the repo's static YAML.
 - **actionlint** over the workflows.
 
+### Dependency updates
+
+Dependabot (`.github/dependabot.yml`) opens weekly PRs for four ecosystems:
+
+| Ecosystem | Covers |
+| --- | --- |
+| `github-actions` | The actions pinned in `build.yml` and `lint.yml` |
+| `docker` | The base tag in `Dockerfile` and `Dockerfile.tensorflow` |
+| `docker-compose` | `docker-compose.yml` |
+| `pip` | `tests/requirements.txt` (yamllint) |
+
+Three things Dependabot cannot read, so they are bumped by hand:
+
+- **`uses: docker://rhysd/actionlint:1.7.12`** in `lint.yml`. The
+  github-actions parser rejects `docker://` references outright
+  ([dependabot-core#8362][db-8362]).
+- **`org.opencontainers.image.base.name`** in both Dockerfiles. Labels are not
+  scanned for dependencies, so keep this line in step with `FROM`.
+- **Helm, hadolint and actionlint versions** in `tests/Makefile`. A Makefile is
+  not a manifest Dependabot understands.
+
+> The base tag is written as a literal in `FROM` rather than through an `ARG` on
+> purpose. Dependabot parses `FROM` with a regex that cannot match `${...}`,
+> so indirection would silently turn base image updates off
+> ([dependabot-core#2057][db-2057]).
+
+[db-8362]: https://github.com/dependabot/dependabot-core/issues/8362
+[db-2057]: https://github.com/dependabot/dependabot-core/issues/2057
+
 ## Migrating from the previous version
 
 Changes since chart `0.1.0`, and what to do about them:
@@ -518,9 +595,9 @@ Changes since chart `0.1.0`, and what to do about them:
 | Change | Action |
 | --- | --- |
 | Base image moved from Docker Hub to `quay.io` (Hub is frozen at 2023-10-20) | Rebuild and republish. |
-| Base image moved from `x86_64-python-3.11` to `2026-09-29` (Python 3.13, Spark 4.2, R 4.5) | Rebuild; kernels and packages may need reinstalling. |
+| Base image moved from `x86_64-python-3.11` to `2026-10-11` (Python 3.13, Spark 4.2, R 4.5) | Rebuild; kernels and packages may need reinstalling. |
 | The image no longer declares `USER ${NB_UID}` | Nothing: the base image already sets `USER 1000`. |
-| `image.tag` now defaults to `""` and falls back to `appVersion` | If you pinned `latest`, `helm upgrade` will switch you to `2026-09-29`. Set `image.tag` explicitly to stay on `latest`. |
+| `image.tag` now defaults to `""` and falls back to `appVersion` | If you pinned `latest`, `helm upgrade` will switch you to `2026-10-11`. Set `image.tag` explicitly to stay on `latest`. |
 | A `JUPYTER_TOKEN` Secret is now created by default | Log in with the token instead of trusting an unauthenticated server. |
 | `serviceAccount.automount` now defaults to `false` | Set it to `true` if you exec into the pod via the API. |
 | `resources` now defaults to real requests and a memory limit | Change the numbers if your cluster needs different values. |

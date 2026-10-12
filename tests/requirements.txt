@@ -1,0 +1,14 @@
+# Python dependencies for the local test tooling.
+#
+# `make -C tests tools` installs these into a gitignored venv at ./bin/yamllint.
+# The same packages run in CI through ibiqlik/action-yamllint, which installs
+# from PyPI, so a version here is a floor for local runs rather than a pin that
+# CI is forced to match.
+#
+# Kept in its own file so Dependabot's pip ecosystem can track it: a package
+# version written as a Makefile variable is invisible to Dependabot.
+#
+# The non-Python tools this repo pins (helm, hadolint, actionlint) are versioned
+# in tests/Makefile, which Dependabot cannot parse. Bump those by hand.
+
+yamllint==1.38.0
