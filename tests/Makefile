@@ -122,11 +122,13 @@ render-all:
 	@$(HELM) template ci "$(CHART)" $(HELM_TEMPLATE_FLAGS) -f "$(ALL_FEATURES)" > /dev/null
 	@echo "    ok"
 
-## lint-docker: hadolint on the Dockerfile
+## lint-docker: hadolint on the Dockerfiles
 lint-docker:
 	@$(MAKE) --no-print-directory _require TOOL="$(HADOLINT)" HINT="make tools"
-	@echo "==> hadolint Dockerfile"
-	@$(HADOLINT) "$(ROOT)/Dockerfile"
+	@for f in $$(ls "$(ROOT)"/Dockerfile*); do \
+		echo "==> hadolint $$(basename $$f)"; \
+		"$(HADOLINT)" "$$f"; \
+	done
 
 ## lint-yaml: yamllint with the config shared with CI
 lint-yaml:

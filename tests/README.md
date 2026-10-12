@@ -18,7 +18,7 @@ make -C tests help     # list every target
 
 | Step | Target | Equivalent CI job |
 | --- | --- | --- |
-| hadolint on `Dockerfile` | `lint-docker` | `lint-docker` |
+| hadolint on `Dockerfile*` | `lint-docker` | `lint-docker` |
 | yamllint with `.yamllint` | `lint-yaml` | `lint-yaml` |
 | actionlint on `.github/workflows` | `lint-workflows` | `lint-yaml` |
 | `helm lint --strict` | `chart-lint` | `lint-helm` (Helm 3.22 and 4.3) |
@@ -83,7 +83,7 @@ the wrong version.
 
 | Target | Description |
 | --- | --- |
-| `lint-docker` | hadolint on `Dockerfile`. |
+| `lint-docker` | hadolint on every `Dockerfile*` in the repo root. |
 | `lint-yaml` | yamllint, using the `.yamllint` config shared with CI. |
 | `lint-workflows` | actionlint on `.github/workflows`. |
 
