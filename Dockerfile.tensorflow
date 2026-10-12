@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+
+# The TensorFlow sibling of the Spark image.
+#
+# This is a separate Dockerfile rather than a build arg on the main one, because
+# Dependabot cannot parse a FROM line that interpolates an ARG (see the comment
+# in the Dockerfile next to this file). Keeping each base image in its own file
+# with a literal FROM is what lets Dependabot track both of them independently.
+#
+# Upstream: https://quay.io/repository/jupyter/tensorflow-notebook
+# The CUDA variant is a separate image with a `cuda-` tag prefix; see the README
+# for how to point this file at it.
+FROM quay.io/jupyter/tensorflow-notebook:2026-10-11
+
+LABEL org.opencontainers.image.title="jupyter-template-tensorflow" \
+      org.opencontainers.image.description="JupyterLab + TensorFlow notebook image for devcontainers and Kubernetes" \
+      org.opencontainers.image.authors="23skdu@users.noreply.github.com" \
+      org.opencontainers.image.source="https://github.com/23skdu/jupyter-template" \
+      org.opencontainers.image.url="https://github.com/23skdu/jupyter-template" \
+      org.opencontainers.image.documentation="https://github.com/23skdu/jupyter-template#readme" \
+      org.opencontainers.image.licenses="BSD-3-Clause" \
+      org.opencontainers.image.base.name="quay.io/jupyter/tensorflow-notebook:2026-10-11" \
+      org.opencontainers.image.vendor="23skdu" \
+      org.opencontainers.image.variant="tensorflow"
+
+# Same start.sh contract as the Spark image, so the environment variables below
+# mean exactly the same thing here. See the Dockerfile for the full explanation
+# of why GRANT_SUDO and NB_GID are inert unless the container starts as root.
+ENV GRANT_SUDO=yes \
+    GEN_CERT=yes \
+    NB_GID=100
+
+# 8888 -> Jupyter Server. There is no second port here: unlike Spark's UI on
+# 4040, TensorBoard is served by jupyter-server-proxy on this same port under
+# /proxy/6006/. To use a GPU, run this image with a CUDA device request; see the
+# README.
+EXPOSE 8888
+
+CMD ["start-notebook.py"]

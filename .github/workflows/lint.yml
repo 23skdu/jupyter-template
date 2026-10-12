@@ -16,17 +16,21 @@ permissions:
 
 jobs:
   lint-docker:
-    name: Dockerfile (hadolint)
+    name: Dockerfiles (hadolint)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: [Dockerfile, Dockerfile.tensorflow]
     steps:
       - uses: actions/checkout@v5
       - name: Hadolint
-        # Passes with no ignores: the upstream Jupyter image already installs
-        # every runtime dependency and sets up an apt post-invoke cleanup hook,
-        # so this Dockerfile deliberately adds no OS packages of its own.
+        # Passes with no ignores: the upstream Jupyter images already install
+        # every runtime dependency and set up an apt post-invoke cleanup hook,
+        # so these Dockerfiles deliberately add no OS packages of their own.
         uses: hadolint/hadolint-action@v3.5.0
         with:
-          dockerfile: Dockerfile
+          dockerfile: ${{ matrix.dockerfile }}
 
   lint-helm:
     name: Helm ${{ matrix.helm }}

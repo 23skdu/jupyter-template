@@ -1,12 +1,13 @@
-# Local development environment for the jupyter-template image.
+# Local development environment for the jupyter-template images.
 #
-# Builds the image from the Dockerfile in this repository, so `docker compose up`
-# exercises the image you are editing rather than the published one.
+# Builds the images from the Dockerfiles in this repository, so `docker compose
+# up` exercises the image you are editing rather than the published one.
 #
-#   docker compose up --build              start JupyterLab
-#   docker compose run --rm spark          one-off PySpark shell (profile)
-#   docker compose run --rm shell          bash in the notebook user (profile)
-#   docker compose down -v                 stop and delete the work volume
+#   docker compose up --build                    start JupyterLab (Spark)
+#   docker compose --profile tensorflow up       start JupyterLab (TensorFlow)
+#   docker compose run --rm spark                one-off PySpark shell (profile)
+#   docker compose run --rm shell                bash in the notebook user (profile)
+#   docker compose down -v                       stop and delete the work volume
 #
 # Jupyter serves HTTPS on 8888 with a self-signed certificate, because the image
 # sets GEN_CERT=yes. Your browser will warn about the certificate.
@@ -17,11 +18,7 @@ services:
   jupyter:
     build:
       context: .
-      args:
-        # Override to test a different upstream release:
-        #   docker compose build --build-arg BASE_TAG=spark-4.2.0
-        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
-        BASE_TAG: ${BASE_TAG:-2026-09-29}
+      dockerfile: Dockerfile
     image: jupyter-template:local
     container_name: jupyter-template
     init: true
@@ -61,13 +58,40 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # TensorFlow variant of the image, for deep learning work. Behind a profile so
+  # it does not build or run unless asked for. Only one of the two Jupyter
+  # services can hold ${JUPYTER_PORT} at a time; stop the other first, or set a
+  # different port for this one.
+  tensorflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.tensorflow
+    image: jupyter-template-tensorflow:local
+    container_name: jupyter-template-tensorflow
+    profiles: [tensorflow]
+    init: true
+    ports:
+      - "${TENSORFLOW_PORT:-8889}:8888"
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dev-only-notebook-token}
+      DOCKER_STACKS_JUPYTER_CMD: ${JUPYTER_CMD:-lab}
+    volumes:
+      - jupyter-work:/home/jovyan/work
+    working_dir: /home/jovyan/work
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:8888/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+    restart: unless-stopped
+
   # One-off PySpark job. `docker compose run --rm spark spark-submit job.py`
   spark:
     build:
       context: .
-      args:
-        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
-        BASE_TAG: ${BASE_TAG:-2026-09-29}
+      dockerfile: Dockerfile
     image: jupyter-template:local
     profiles: [tools]
     init: true
@@ -85,9 +109,7 @@ services:
   shell:
     build:
       context: .
-      args:
-        BASE_IMAGE: ${BASE_IMAGE:-quay.io/jupyter/all-spark-notebook}
-        BASE_TAG: ${BASE_TAG:-2026-09-29}
+      dockerfile: Dockerfile
     image: jupyter-template:local
     profiles: [tools]
     init: true
