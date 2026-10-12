@@ -63,7 +63,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/23skdu/jupyter-template:2026-09-29
+          value: ghcr.io/23skdu/jupyter-template:2026-10-11
 
   - it: uses image.tag when provided
     set:

@@ -3,17 +3,18 @@
 # The Jupyter Docker Stacks moved their publishing target from Docker Hub to
 # Quay.io in 2023. The Docker Hub copy of this repository is frozen at
 # 2023-10-20 and no longer receives security updates, so always pull from
-# quay.io. Override with --build-arg to track a different tag, e.g.:
-#   --build-arg BASE_TAG=spark-4.2.0
-ARG BASE_IMAGE=quay.io/jupyter/all-spark-notebook
-ARG BASE_TAG=2026-09-29
-
-FROM ${BASE_IMAGE}:${BASE_TAG}
-
-# ARG values declared before FROM are only in scope for the FROM instruction,
-# so they must be redeclared to be referenced below.
-ARG BASE_IMAGE
-ARG BASE_TAG
+# quay.io.
+#
+# The base image is pinned to a dated tag rather than `latest`, so a rebuild is
+# reproducible. That tag is written out as a literal rather than through an ARG
+# because Dependabot parses FROM with a regex that cannot match `${...}`
+# interpolation, so an ARG here would silently disable base image updates
+# (dependabot/dependabot-core#2057). Dependabot bumps this line; see
+# .github/dependabot.yml.
+#
+# To build against a different upstream release, edit this tag. `spark-4.2.0`,
+# `python-3.13.16` and `latest` all exist upstream.
+FROM quay.io/jupyter/all-spark-notebook:2026-10-11
 
 LABEL org.opencontainers.image.title="jupyter-template" \
       org.opencontainers.image.description="JupyterLab + Apache Spark (PySpark/R) notebook image for devcontainers and Kubernetes" \
@@ -22,7 +23,7 @@ LABEL org.opencontainers.image.title="jupyter-template" \
       org.opencontainers.image.url="https://github.com/23skdu/jupyter-template" \
       org.opencontainers.image.documentation="https://github.com/23skdu/jupyter-template#readme" \
       org.opencontainers.image.licenses="BSD-3-Clause" \
-      org.opencontainers.image.base.name="${BASE_IMAGE}:${BASE_TAG}" \
+      org.opencontainers.image.base.name="quay.io/jupyter/all-spark-notebook:2026-10-11" \
       org.opencontainers.image.vendor="23skdu"
 
 # Options consumed by the upstream start.sh entrypoint / jupyter config.

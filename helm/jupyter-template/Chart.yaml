@@ -23,7 +23,7 @@ version: 0.2.0
 
 # Version of the application being deployed. This defaults to the image tag,
 # which tracks the Jupyter Docker Stacks release the image is built from.
-appVersion: "2026-09-29"
+appVersion: "2026-10-11"
 
 # autoscaling/v2 (HPA) requires Kubernetes >= 1.23. Gateway API v1 HTTPRoutes
 # are optional and additionally require the Gateway API CRDs.

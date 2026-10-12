@@ -105,7 +105,7 @@ tests:
       - equal:
           documentIndex: 0
           path: metadata.labels['app.kubernetes.io/version']
-          value: "2026-09-29"
+          value: "2026-10-11"
 
   - it: marks the release as managed by Helm
     asserts:
