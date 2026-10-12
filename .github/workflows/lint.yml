@@ -23,7 +23,7 @@ jobs:
       matrix:
         dockerfile: [Dockerfile, Dockerfile.tensorflow]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Hadolint
         # Passes with no ignores: the upstream Jupyter images already install
         # every runtime dependency and set up an apt post-invoke cleanup hook,
@@ -48,7 +48,7 @@ jobs:
           - helm: v4.3.0
             pluginArgs: "--verify=false"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Helm
         uses: azure/setup-helm@v5
@@ -82,7 +82,7 @@ jobs:
     name: YAML and workflow syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3
