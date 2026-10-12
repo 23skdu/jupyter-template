@@ -22,7 +22,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # BuildKit is what makes multi-platform builds and provenance attestations
       # possible. build-push-action requires it to be set up explicitly.
