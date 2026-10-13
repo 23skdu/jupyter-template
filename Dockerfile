@@ -14,7 +14,7 @@
 #
 # To build against a different upstream release, edit this tag. `spark-4.2.0`,
 # `python-3.13.16` and `latest` all exist upstream.
-FROM quay.io/jupyter/all-spark-notebook:2026-10-11
+FROM quay.io/jupyter/all-spark-notebook:2026-10-12
 
 LABEL org.opencontainers.image.title="jupyter-template" \
       org.opencontainers.image.description="JupyterLab + Apache Spark (PySpark/R) notebook image for devcontainers and Kubernetes" \
