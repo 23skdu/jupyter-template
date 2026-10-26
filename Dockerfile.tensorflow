@@ -10,7 +10,7 @@
 # Upstream: https://quay.io/repository/jupyter/tensorflow-notebook
 # The CUDA variant is a separate image with a `cuda-` tag prefix; see the README
 # for how to point this file at it.
-FROM quay.io/jupyter/tensorflow-notebook:2026-10-11
+FROM quay.io/jupyter/tensorflow-notebook:2026-10-26
 
 LABEL org.opencontainers.image.title="jupyter-template-tensorflow" \
       org.opencontainers.image.description="JupyterLab + TensorFlow notebook image for devcontainers and Kubernetes" \
