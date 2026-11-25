@@ -608,4 +608,4 @@ Changes since chart `0.1.0`, and what to do about them:
 
 ## Licence
 
-[BSD 3-Clause](LICENSE), matching the upstream Jupyter Docker Stacks.
+This project is released into the public domain under the [Unlicense](https://unlicense.org). See [LICENSE](LICENSE) for details.
